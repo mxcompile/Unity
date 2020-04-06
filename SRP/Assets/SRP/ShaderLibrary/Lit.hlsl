@@ -10,11 +10,18 @@ CBUFFER_START(UnityPerFrame)
 float4x4 unity_MatrixVP;
 CBUFFER_END
 
+//引擎填充
 CBUFFER_START(UnityPerDraw)
 	float4x4 unity_ObjectToWorld;
 	//未找到使用方法
 	float4 unity_PerObjectLightData;
 	float4 unity_PerObjectLightIndices;
+
+CBUFFER_END
+
+
+CBUFFER_START(UnityPerCamera)
+float3 _WorldSpaceCameraPos;
 CBUFFER_END
 
 
@@ -22,11 +29,13 @@ CBUFFER_END
 
 //目前测试 数组方式仅支持vector4型 例如对于float[]型会自动扩展成float4[] size = (((sizeOf(array) - 1))* 4+ 1)*sizeOf(float)
 //仅支持4个元素，非常奇怪
-CBUFFER_START(_LightBufer)
+CBUFFER_START(MX_LightBuffer)
 	float4 _VisibleLightColors[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightDirectionsOrPositions[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightAttenuations[MAX_VISIBLE_LIGHTS];
 	float4 _VisibleLightSpotDirections[MAX_VISIBLE_LIGHTS];
+	float4 _AdditionalLightsCount;
+
 CBUFFER_END
 
 float3 DiffuseLight (int index, float3 normal , float3 worldPos,float shadowAttenuation)
@@ -86,11 +95,18 @@ CBUFFER_START(_ShadowBuffer)
 	float4x4 _WorldToShadowMatrices[MAX_VISIBLE_LIGHTS];
 	float4 _ShadowData[MAX_VISIBLE_LIGHTS];
 	float4 _ShadowMapSize;
+	float4 _GlobalShadowData;
 
 CBUFFER_END
 
 TEXTURE2D_SHADOW(_ShadowMap);
 SAMPLER_CMP(sampler_ShadowMap);
+
+//针对方向光，无此设置会导致摄像机边缘区域出现黑边等奇怪的情况，在投影平面足够大的情况下
+float DistanceToCameraSqr(float3 worldPos) {
+	float3 cameraToFragment = worldPos - _WorldSpaceCameraPos;
+	return dot(cameraToFragment, cameraToFragment);
+}
 
 
 float HardShadowAttenuation(float4 shadowPos) {
@@ -116,7 +132,8 @@ float SoftShadowAttenuation(float4 shadowPos) {
 
 float ShadowAttenuation(int index ,float3 worldPos) {
 
-	if (_ShadowData[index].x <= 0) {
+	if (_ShadowData[index].x <= 0 ||
+		DistanceToCameraSqr(worldPos) > _GlobalShadowData.y) {
 		return 1.0;
 	}
 
@@ -124,6 +141,8 @@ float ShadowAttenuation(int index ,float3 worldPos) {
 
 	float4 shadowPos = mul(_WorldToShadowMatrices[index], float4(worldPos, 1.0));
 	shadowPos.xyz /= shadowPos.w;
+	shadowPos.xy = saturate(shadowPos.xy);
+	shadowPos.xy = shadowPos.xy * _GlobalShadowData.x + _ShadowData[index].zw;
 
 #if defined(_SHADOWS_HARD)
 	#if defined(_SHADOWS_SOFT)
@@ -191,7 +210,7 @@ float4 LitPassFragment(VertexOutput input) : SV_TARGET{
 	//float3 deffuseLight = saturate(dot(input.normal ,float3(0, 1, 0)) );
 	//float3 diffuseLight = input.vertexLighting;
 	float3 diffuseLight = 0;
-	for(int i=0;i<4;i++)
+	for(int i=0;i<min( MAX_VISIBLE_LIGHTS, _AdditionalLightsCount.x);i++)
 	{
 		float shadowAttenuation = ShadowAttenuation(i,input.worldPos);
 		diffuseLight += DiffuseLight(i,input.normal,input.worldPos, shadowAttenuation);
