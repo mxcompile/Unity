@@ -121,6 +121,8 @@ public class MyPipeline : RenderPipeline
     static int cascadedShadoStrengthId =
         Shader.PropertyToID("_CascadedShadowStrength");
 
+    static int cascadeCullingSpheresId =
+        Shader.PropertyToID("_CascadeCullingSpheres");
 
     const string shadowsHardKeyword = "_SHADOWS_HARD";
     const string shadowsSoftKeyword = "_SHADOWS_SOFT";
@@ -140,6 +142,7 @@ public class MyPipeline : RenderPipeline
     Vector4[] shadowData = new Vector4[maxVisibleLights];
     Matrix4x4[] worldToShadowMatrices = new Matrix4x4[maxVisibleLights];
     Matrix4x4[] worldToShadowCascadeMatrices = new Matrix4x4[4];
+    Vector4[] cascadeCullingSpheres = new Vector4[4];
 
     RenderTexture shadowMap;
     RenderTexture cascadedShadowMap;
@@ -159,6 +162,7 @@ public class MyPipeline : RenderPipeline
         Clear(ref shadowData);
         Clear(ref worldToShadowMatrices);
         Clear(ref worldToShadowCascadeMatrices);
+        Clear(ref cascadeCullingSpheres);
 
         foreach (var camera in cameras)
         {
@@ -234,7 +238,7 @@ public class MyPipeline : RenderPipeline
                 cameraBuffer.DisableShaderKeyword(shadowsSoftKeyword);
             }
 
-            cameraBuffer.SetGlobalVector(Shader.PropertyToID("_AdditionalLightsCount"), new Vector4(cull.visibleLights.Length, 0, 0, 0));
+            cameraBuffer.SetGlobalVector(Shader.PropertyToID("_AdditionalLightsCount"), new Vector4(cull.visibleLights.Length, mainLightExists?1:0, 0, 0));
         }
         else
         {
@@ -291,9 +295,6 @@ public class MyPipeline : RenderPipeline
         //settings.SetShaderPassName(4, new ShaderTagId("VertexLMRGBM"));
         //settings.SetShaderPassName(5, new ShaderTagId("VertexLM"));
         //settings.SetShaderPassName(6, new ShaderTagId("SRPDefaultUnlit"));
-       
-
-
 
         sortingSettings.criteria = SortingCriteria.CommonOpaque;
         settings.sortingSettings = sortingSettings;
@@ -351,11 +352,12 @@ public class MyPipeline : RenderPipeline
 
     //配置灯光信息
     /// <summary>
-    /// 多Directional会导致crash，奇怪了
     /// </summary>
     /// <param name="cull"></param>
     private void ConfigureLights(CullingResults cull)
     {
+        if (cull.visibleLights.Length == 0) return;
+
         shadowTileCount = 0;
         mainLightExists = false;
 
@@ -420,7 +422,6 @@ public class MyPipeline : RenderPipeline
                 visibleLightAttenuations[i] = attenuation;
             }
         }
-
 
         //cascades shadow设置
         if (mainLightExists || cull.visibleLights.Length > maxVisibleLights)
@@ -560,6 +561,10 @@ public class MyPipeline : RenderPipeline
             shadowBuffer.Clear();
 
             shadowSettings.splitData = splitData;
+            
+            cascadeCullingSpheres[i] = splitData.cullingSphere;
+            cascadeCullingSpheres[i].w *= splitData.cullingSphere.w;
+
 
             context.DrawShadows(ref shadowSettings);
             CalculateWorldToShadowMatrix(
@@ -574,8 +579,12 @@ public class MyPipeline : RenderPipeline
 
         shadowBuffer.DisableScissorRect();
         shadowBuffer.SetGlobalTexture(cascadedShadowMapId, cascadedShadowMap);
+
         shadowBuffer.SetGlobalMatrixArray(
             worldToShadowCascadeMatricesId, worldToShadowCascadeMatrices
+        );
+        shadowBuffer.SetGlobalVectorArray(
+            cascadeCullingSpheresId, cascadeCullingSpheres
         );
 
         float invShadowMapSize = 1f / shadowMapSize;

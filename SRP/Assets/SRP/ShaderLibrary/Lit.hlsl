@@ -57,14 +57,13 @@ float3 DiffuseLight (int index, float3 normal , float3 worldPos,float shadowAtte
 		rangeFade *= rangeFade;
 
 		float spotFade = dot(spotDirection, lightDirection);
-		spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w);
+		spotFade = saturate(spotFade * lightAttenuation.z + lightAttenuation.w) +1 - lightPositionOrDirection.w;
 		spotFade *= spotFade;
-
 
 		
 
 		float distanceSqr = max(dot(lightVector, lightVector), 0.00001);
-		diffuse = diffuse * spotFade * rangeFade / distanceSqr + (1-lightPositionOrDirection.w)* diffuse;
+		diffuse = diffuse * spotFade * rangeFade / distanceSqr;
 
 		diffuse *= shadowAttenuation;
 
@@ -102,6 +101,7 @@ CBUFFER_START(_ShadowBuffer)
 	float4x4 _WorldToShadowCascadeMatrices[4];
 	float4 _CascadedShadowMapSize;
 	float _CascadedShadowStrength;
+	float4 _CascadeCullingSpheres[4];
 
 CBUFFER_END
 
@@ -110,6 +110,12 @@ SAMPLER_CMP(sampler_ShadowMap);
 
 TEXTURE2D_SHADOW(_CascadedShadowMap);
 SAMPLER_CMP(sampler_CascadedShadowMap);
+
+//检查像素使用块Cascades纹理
+float InsideCascadeCullingSphere(int index, float3 worldPos) {
+	float4 s = _CascadeCullingSpheres[index];
+	return dot(worldPos - s.xyz, worldPos - s.xyz) < s.w;
+}
 
 //针对方向光，无此设置会导致摄像机边缘区域出现黑边等奇怪的情况，在投影平面足够大的情况下
 float DistanceToCameraSqr(float3 worldPos) {
@@ -156,8 +162,19 @@ float CascadedShadowAttenuation(float3 worldPos) {
 #if !defined(_CASCADED_SHADOWS_HARD) && !defined(_CASCADED_SHADOWS_SOFT)
 	return 1.0;
 #endif
+	float4 cascadeFlags = float4(
+		InsideCascadeCullingSphere(0, worldPos),
+		InsideCascadeCullingSphere(1, worldPos),
+		InsideCascadeCullingSphere(2, worldPos),
+		InsideCascadeCullingSphere(3, worldPos)
+		);
 
-	float cascadeIndex = 2;
+	//return dot(cascadeFlags, 0.25);
+
+	cascadeFlags.yzw = saturate(cascadeFlags.yzw - cascadeFlags.xyz);
+	float cascadeIndex = dot(cascadeFlags, float4(0, 1, 2, 3));
+
+	//float cascadeIndex = 2;
 	float4 shadowPos = mul(
 		_WorldToShadowCascadeMatrices[cascadeIndex], float4(worldPos, 1.0)
 	);
@@ -174,9 +191,9 @@ float CascadedShadowAttenuation(float3 worldPos) {
 
 float3 MainLight(float3 normal, float3 worldPos) {
 	float shadowAttenuation = CascadedShadowAttenuation(worldPos);
-	float3 lightColor = _VisibleLightColors[0].rgb;
+	float3 lightColor = _VisibleLightColors[0].rgb ;
 	float3 lightDirection = _VisibleLightDirectionsOrPositions[0].xyz;
-	float diffuse = saturate(dot(normal, lightDirection));
+	float diffuse = saturate(dot(normal, lightDirection)) ;
 	diffuse *= shadowAttenuation;
 	return diffuse * lightColor;
 }
@@ -211,6 +228,7 @@ float ShadowAttenuation(int index ,float3 worldPos) {
 #else
 	attenuation = SoftShadowAttenuation(shadowPos);
 #endif
+
 	return lerp(1, attenuation, _ShadowData[index].x);
 
 }
@@ -258,23 +276,21 @@ float4 LitPassFragment(VertexOutput input) : SV_TARGET{
 
 	float3 albedo = UNITY_ACCESS_INSTANCED_PROP(PerInstance, _Color).rgb;
 	
-	//float3 deffuseLight = saturate(dot(input.normal ,float3(0, 1, 0)) );
-	//float3 diffuseLight = input.vertexLighting;
 	float3 diffuseLight = 0;
 
 #if defined(_CASCADED_SHADOWS_HARD) || defined(_CASCADED_SHADOWS_SOFT)
-	diffuseLight += MainLight(input.normal, input.worldPos);
+	diffuseLight += MainLight(input.normal, input.worldPos) * (1 - _VisibleLightDirectionsOrPositions[0].w);
 #endif
 
-	for(int i=0;i<min( MAX_VISIBLE_LIGHTS, _AdditionalLightsCount.x);i++)
+	for(int i= _AdditionalLightsCount.y;i<min( MAX_VISIBLE_LIGHTS, _AdditionalLightsCount.x);i++)
 	{
 		float shadowAttenuation = ShadowAttenuation(i,input.worldPos);
-		diffuseLight += DiffuseLight(i,input.normal,input.worldPos, shadowAttenuation);
+		//diffuseLight += DiffuseLight(i,input.normal,input.worldPos, shadowAttenuation);
 	}
 	
 	float3 color = diffuseLight * albedo;
 	
-	return float4(diffuseLight,1);
+	return float4(color,1);
 }
 
 #endif
