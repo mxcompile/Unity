@@ -665,7 +665,7 @@ public class MyPipeline : RenderPipeline
 
 
 
-        for (int i = 0; i < cull.visibleLights.Length; i++)
+        for (int addtional = mainLightExists ? 1 : 0,  i = addtional; i < cull.visibleLights.Length; i++)
         {
             if (i == maxVisibleLights)
             {
@@ -702,7 +702,7 @@ public class MyPipeline : RenderPipeline
             }
 
             
-            var tileOffset = ConfigureShadowTile(shadowBuffer, i, split, tileSize);
+            var tileOffset = ConfigureShadowTile(shadowBuffer, i- addtional, split, tileSize);
 
             shadowData[i].z = tileOffset.x * tileScale;
             shadowData[i].w = tileOffset.y * tileScale;

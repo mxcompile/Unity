@@ -228,7 +228,7 @@ float ShadowAttenuation(int index ,float3 worldPos) {
 #else
 	attenuation = SoftShadowAttenuation(shadowPos);
 #endif
-
+	attenuation = HardShadowAttenuation(shadowPos);
 	return lerp(1, attenuation, _ShadowData[index].x);
 
 }
@@ -285,7 +285,7 @@ float4 LitPassFragment(VertexOutput input) : SV_TARGET{
 	for(int i= _AdditionalLightsCount.y;i<min( MAX_VISIBLE_LIGHTS, _AdditionalLightsCount.x);i++)
 	{
 		float shadowAttenuation = ShadowAttenuation(i,input.worldPos);
-		//diffuseLight += DiffuseLight(i,input.normal,input.worldPos, shadowAttenuation);
+		diffuseLight += DiffuseLight(i,input.normal,input.worldPos, shadowAttenuation);
 	}
 	
 	float3 color = diffuseLight * albedo;

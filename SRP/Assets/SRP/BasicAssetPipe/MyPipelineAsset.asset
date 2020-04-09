@@ -17,7 +17,7 @@ MonoBehaviour:
   instancing: 1
   lightsUseLinearIntensity: 1
   shadowMapSize: 1024
-  shadowDistance: 48
-  shadowCascades: 4
-  twoCascadesSplit: 0.8389723
+  shadowDistance: 48.3
+  shadowCascades: 2
+  twoCascadesSplit: 0.5461014
   fourCascadesSplit: {x: 0.43014038, y: 0.56167305, z: 0.8225625}
